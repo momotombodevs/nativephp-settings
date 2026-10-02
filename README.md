@@ -108,6 +108,22 @@ Supported stored values are:
 
 The same API and validation rules are implemented on Android and iOS. Values survive application restarts and are scoped to the local app installation. This package does not provide secure storage; use a dedicated Keychain/Keystore-backed solution for secrets.
 
+## Running tests
+
+Run the PHP contract and NativePHP app integration tests from the consuming app:
+
+```bash
+php artisan test
+```
+
+Run the JavaScript bridge tests from the consuming app:
+
+```bash
+npm --prefix packages/momotombo/nativephp-settings run test:js
+```
+
+The component tests fake the NativePHP bridge; they do not execute Kotlin or Swift storage. Verify device persistence and native rendering by running the app on Android and iOS.
+
 ## Validation before release
 
 Run plugin validation from the consuming NativePHP application:

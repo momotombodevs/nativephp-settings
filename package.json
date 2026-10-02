@@ -1,0 +1,8 @@
+{
+  "name": "@momotombo/nativephp-settings",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test:js": "node --test resources/js/settings.test.mjs"
+  }
+}

@@ -116,6 +116,7 @@ final class Settings
      * string array keys to integers.
      *
      * @return array<string|int, mixed>
+     *
      * @throws SettingsBridgeException When NativePHP is unavailable or returns invalid data.
      */
     public function all(): array
@@ -136,7 +137,18 @@ final class Settings
 
             // PHP casts numeric-string array keys to integers during JSON decoding.
             $key = (string) $key;
-            $settings[self::validateKey($key)] = self::normalizeBridgeValue($value, 'Settings.All');
+
+            try {
+                $key = self::validateKey($key);
+            } catch (InvalidArgumentException $exception) {
+                throw new SettingsBridgeException(
+                    'INVALID_RESPONSE',
+                    'The Settings.All response contains an invalid settings key.',
+                    $exception,
+                );
+            }
+
+            $settings[$key] = self::normalizeBridgeValue($value, 'Settings.All');
         }
 
         return $settings;

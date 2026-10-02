@@ -1,0 +1,88 @@
+{
+    "name": "momotombo/nativephp-settings",
+    "version": "1.0.0",
+    "description": "Local typed settings for NativePHP Mobile applications.",
+    "namespace": "Settings",
+    "keywords": [],
+    "category": "utilities",
+    "license": "MIT",
+    "pricing": {
+        "type": "free"
+    },
+    "author": {
+        "name": "Momotombo"
+    },
+    "funding": [],
+    "platforms": [
+        "android",
+        "ios"
+    ],
+    "screenshots": [],
+    "bridge_functions": [
+        {
+            "name": "Settings.Set",
+            "android": "dev.momotombo.plugins.nativephp_settings.SettingsFunctions.Set",
+            "android_params": ["context"],
+            "ios": "SettingsFunctions.Set",
+            "description": "Persist a local setting"
+        },
+        {
+            "name": "Settings.Get",
+            "android": "dev.momotombo.plugins.nativephp_settings.SettingsFunctions.Get",
+            "android_params": ["context"],
+            "ios": "SettingsFunctions.Get",
+            "description": "Read a local setting"
+        },
+        {
+            "name": "Settings.Has",
+            "android": "dev.momotombo.plugins.nativephp_settings.SettingsFunctions.Has",
+            "android_params": ["context"],
+            "ios": "SettingsFunctions.Has",
+            "description": "Check whether a local setting exists"
+        },
+        {
+            "name": "Settings.Forget",
+            "android": "dev.momotombo.plugins.nativephp_settings.SettingsFunctions.Forget",
+            "android_params": ["context"],
+            "ios": "SettingsFunctions.Forget",
+            "description": "Remove a local setting"
+        },
+        {
+            "name": "Settings.All",
+            "android": "dev.momotombo.plugins.nativephp_settings.SettingsFunctions.All",
+            "android_params": ["context"],
+            "ios": "SettingsFunctions.All",
+            "description": "Read all local settings"
+        }
+    ],
+    "android": {
+        "min_version": 21,
+        "permissions": [],
+        "repositories": [],
+        "dependencies": {
+            "implementation": []
+        },
+        "activities": [],
+        "services": [],
+        "receivers": [],
+        "providers": []
+    },
+    "ios": {
+        "min_version": "15.0",
+        "permissions": [],
+        "repositories": [],
+        "dependencies": {
+            "swift_packages": [],
+            "pods": []
+        }
+    },
+    "assets": {
+        "android": [],
+        "ios": []
+    },
+    "secrets": [],
+    "service_provider": "Momotombo\\NativephpSettings\\SettingsServiceProvider",
+    "hooks": {
+        "copy_assets": "nativephp:settings:copy-assets"
+    }
+}

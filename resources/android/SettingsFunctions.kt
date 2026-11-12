@@ -14,8 +14,12 @@ private const val STORAGE_KEY_PREFIX = "dev.momotombo.nativephp.settings."
 private const val STRING_PREFIX = "mnp-settings:v1:s:"
 private const val DOUBLE_PREFIX = "mnp-settings:v1:d:"
 private const val JSON_PREFIX = "mnp-settings:v1:j:"
+/** Read-only: a future writer stores any JSON value as compact JSON after this prefix. */
+private const val JSON_V2_PREFIX = "mnp-settings:v2:"
 private const val MAX_VALUE_BYTES = 65_536
 private const val MAX_NESTING_DEPTH = 32
+/** Rejected on every platform because JavaScript treats them specially. */
+private val RESERVED_KEY_SEGMENTS = setOf("__proto__", "constructor", "prototype")
 
 /**
  * NativePHP bridge handlers for device-local settings.
@@ -90,19 +94,30 @@ object SettingsFunctions {
         }
     }
 
+    /** Skips entries that cannot be decoded and reports their keys in `corrupt`. */
     class All(private val context: Context) : BridgeFunction {
         override fun execute(parameters: Map<String, Any>): Map<String, Any> {
             val values = linkedMapOf<String, Any>()
+            val corrupt = mutableListOf<String>()
 
             preferences(context).all.forEach { (storageKey, storedValue) ->
                 if (storageKey.startsWith(STORAGE_KEY_PREFIX)) {
                     val key = storageKey.removePrefix(STORAGE_KEY_PREFIX)
-                    validateKey(key)
-                    values[key] = decodeStoredValue(storedValue)
+                    try {
+                        validateKey(key)
+                        values[key] = decodeStoredValue(storedValue)
+                    } catch (_: Exception) {
+                        corrupt.add(key)
+                    }
                 }
             }
 
-            return BridgeResponse.success(mapOf("values" to values))
+            val data = linkedMapOf<String, Any>("values" to values)
+            if (corrupt.isNotEmpty()) {
+                data["corrupt"] = corrupt.sorted()
+            }
+
+            return BridgeResponse.success(data)
         }
     }
 }
@@ -116,7 +131,7 @@ private fun settingKey(parameters: Map<String, Any>): String {
 }
 
 private fun validateKey(key: String) {
-    if (!Regex("^[a-z0-9_]+(?:\\.[a-z0-9_]+)*$").matches(key)) {
+    if (!Regex("^[a-z0-9_]+(?:\\.[a-z0-9_]+)*$").matches(key) || key.split('.').any { it in RESERVED_KEY_SEGMENTS }) {
         invalidParameters("key must use lowercase dot notation.")
     }
 }
@@ -195,18 +210,8 @@ private fun decodeStoredValue(value: Any?): Any {
             value.startsWith(DOUBLE_PREFIX) -> value.removePrefix(DOUBLE_PREFIX).toDoubleOrNull()
                 ?.takeIf(Double::isFinite)
                 ?: corruptStoredValue()
-            value.startsWith(JSON_PREFIX) -> {
-                val jsonValue = try {
-                    val tokener = JSONTokener(value.removePrefix(JSON_PREFIX))
-                    val parsed = tokener.nextValue()
-                    if (tokener.nextClean() != '\u0000') corruptStoredValue()
-                    parsed
-                } catch (_: JSONException) {
-                    corruptStoredValue()
-                }
-                if (jsonValue !is JSONObject && jsonValue !is JSONArray) corruptStoredValue()
-                normalizeStoredValue(jsonValue)
-            }
+            value.startsWith(JSON_PREFIX) -> decodeStoredJson(value.removePrefix(JSON_PREFIX), allowScalars = false)
+            value.startsWith(JSON_V2_PREFIX) -> decodeStoredJson(value.removePrefix(JSON_V2_PREFIX), allowScalars = true)
             else -> corruptStoredValue()
         }
         else -> corruptStoredValue()
@@ -220,6 +225,32 @@ private fun decodeStoredValue(value: Any?): Any {
 
     if (encoded.toByteArray(Charsets.UTF_8).size > MAX_VALUE_BYTES) corruptStoredValue()
     return decoded
+}
+
+/**
+ * Decodes v1 JSON collections and v2 JSON values (any type, including scalars).
+ * Both go through the same null, depth, finiteness, and size validation as writes.
+ */
+private fun decodeStoredJson(json: String, allowScalars: Boolean): Any {
+    // Reject oversized payloads before parsing; a valid value never exceeds the limit.
+    if (json.toByteArray(Charsets.UTF_8).size > MAX_VALUE_BYTES) corruptStoredValue()
+
+    val parsed = try {
+        val tokener = JSONTokener(json)
+        val value = tokener.nextValue()
+        if (tokener.nextClean() != '\u0000') corruptStoredValue()
+        value
+    } catch (_: JSONException) {
+        corruptStoredValue()
+    } catch (_: StackOverflowError) {
+        // JSONTokener is recursive; deeply nested input must not crash the app.
+        corruptStoredValue()
+    }
+
+    // JSONTokener accepts unquoted words as strings; a JSON string must be quoted.
+    if (parsed is String && !json.trimStart().startsWith("\"")) corruptStoredValue()
+    if (!allowScalars && parsed !is JSONObject && parsed !is JSONArray) corruptStoredValue()
+    return normalizeStoredValue(parsed)
 }
 
 private fun normalizeStoredValue(value: Any?): Any = try {

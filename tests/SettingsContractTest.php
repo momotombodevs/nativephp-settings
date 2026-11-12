@@ -1,9 +1,10 @@
 <?php
 
 use InvalidArgumentException;
-use Momotombo\NativephpSettings\Contracts\SettingsBridge;
 use Momotombo\NativephpSettings\Exceptions\SettingsBridgeException;
 use Momotombo\NativephpSettings\Settings;
+
+require_once __DIR__.'/Support/SettingsContractBridge.php';
 
 enum SettingsContractLanguage: string
 {
@@ -13,61 +14,6 @@ enum SettingsContractLanguage: string
 enum SettingsContractPriority: int
 {
     case High = 1;
-}
-
-final class SettingsContractBridge implements SettingsBridge
-{
-    /** @var array<string, mixed> */
-    public array $values = [];
-
-    /** @var array<string, array{method: string, parameters: array<string, mixed>}> */
-    public array $calls = [];
-
-    /** @var array<string, array<string, mixed>|Closure> */
-    public array $responses = [];
-
-    public function call(string $method, array $parameters = []): array
-    {
-        $this->calls[] = ['method' => $method, 'parameters' => $parameters];
-
-        if (array_key_exists($method, $this->responses)) {
-            $response = $this->responses[$method];
-
-            return $response instanceof Closure ? $response($parameters, $this) : $response;
-        }
-
-        return match ($method) {
-            'Settings.Set' => $this->set($parameters),
-            'Settings.Get' => $this->get($parameters),
-            'Settings.Has' => ['found' => array_key_exists($parameters['key'], $this->values)],
-            'Settings.Forget' => $this->forget($parameters),
-            'Settings.All' => ['values' => $this->values],
-            default => throw new LogicException("Unexpected bridge call [{$method}]."),
-        };
-    }
-
-    private function set(array $parameters): array
-    {
-        $this->values[$parameters['key']] = $parameters['value'];
-
-        return ['status' => 'ok'];
-    }
-
-    private function get(array $parameters): array
-    {
-        $key = $parameters['key'];
-
-        return array_key_exists($key, $this->values)
-            ? ['found' => true, 'value' => $this->values[$key]]
-            : ['found' => false];
-    }
-
-    private function forget(array $parameters): array
-    {
-        unset($this->values[$parameters['key']]);
-
-        return ['status' => 'ok'];
-    }
 }
 
 function makeSettingsContract(): array
@@ -138,7 +84,7 @@ it('forgets a setting repeatedly without changing other values', function () {
 it('rejects keys outside lowercase dot notation', function () {
     [$settings] = makeSettingsContract();
 
-    foreach (['', 'Profile.name', 'two words', 'trailing.', '.leading', 'double..dot', 'dash-key', 'ñame'] as $key) {
+    foreach (['', 'Profile.name', 'two words', 'trailing.', '.leading', 'double..dot', 'dash-key', 'ñame', '__proto__', 'app.__proto__.polluted', 'constructor', 'app.prototype', 'constructor.name'] as $key) {
         expect(fn () => $settings->set($key, 'value'))->toThrow(InvalidArgumentException::class);
     }
 });
@@ -220,6 +166,15 @@ it('rejects contradictory and unsupported values returned by the bridge', functi
     $bridge->responses['Settings.Get'] = ['found' => true, 'value' => null];
     expect(fn () => $settings->get('app.value'))->toThrow(SettingsBridgeException::class);
 
-    $bridge->responses['Settings.All'] = ['values' => ['Invalid.Key' => 'value']];
+    $bridge->responses['Settings.All'] = ['values' => [], 'corrupt' => 'not-a-list'];
     expect(fn () => $settings->all())->toThrow(SettingsBridgeException::class);
+});
+
+it('accepts keys that only contain reserved words as part of a segment', function () {
+    [$settings] = makeSettingsContract();
+
+    $settings->set('app.constructor_name', 'value');
+    $settings->set('proto.prototypes', 'value');
+
+    expect($settings->all())->toBe(['app.constructor_name' => 'value', 'proto.prototypes' => 'value']);
 });

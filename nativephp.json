@@ -1,9 +1,17 @@
 {
     "name": "momotombo/nativephp-settings",
-    "version": "1.0.0",
+    "version": "1.1.0",
     "description": "Local typed settings for NativePHP Mobile applications.",
     "namespace": "Settings",
-    "keywords": [],
+    "keywords": [
+        "settings",
+        "preferences",
+        "storage",
+        "userdefaults",
+        "sharedpreferences",
+        "key-value",
+        "nativephp"
+    ],
     "category": "utilities",
     "license": "MIT",
     "pricing": {
@@ -81,8 +89,5 @@
         "ios": []
     },
     "secrets": [],
-    "service_provider": "Momotombo\\NativephpSettings\\SettingsServiceProvider",
-    "hooks": {
-        "copy_assets": "nativephp:settings:copy-assets"
-    }
+    "service_provider": "Momotombo\\NativephpSettings\\SettingsServiceProvider"
 }

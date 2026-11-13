@@ -5,8 +5,12 @@ private let storageKeyPrefix = "dev.momotombo.nativephp.settings."
 private let stringPrefix = "mnp-settings:v1:s:"
 private let doublePrefix = "mnp-settings:v1:d:"
 private let jsonPrefix = "mnp-settings:v1:j:"
+/// Read-only: a future writer stores any JSON value as compact JSON after this prefix.
+private let jsonV2Prefix = "mnp-settings:v2:"
 private let maxValueBytes = 65_536
 private let maxNestingDepth = 32
+/// Rejected on every platform because JavaScript treats them specially.
+private let reservedKeySegments: Set<String> = ["__proto__", "constructor", "prototype"]
 
 /// NativePHP bridge handlers for device-local settings.
 /// Keep method names, payloads, and validation limits aligned with PHP and Android.
@@ -78,19 +82,31 @@ enum SettingsFunctions {
         }
     }
 
+    /// Skips entries that cannot be decoded and reports their keys in `corrupt`.
     class All: BridgeFunction {
         func execute(parameters: [String: Any]) throws -> [String: Any] {
             var values: [String: Any] = [:]
+            var corrupt: [String] = []
             let storedSettings = try persistedSettings()
 
             for (storageKey, storedValue) in storedSettings
                 where storageKey.hasPrefix(storageKeyPrefix) {
                 let key = String(storageKey.dropFirst(storageKeyPrefix.count))
-                try validateKey(key)
-                values[key] = try decodeStoredValue(storedValue)
+
+                do {
+                    try validateKey(key)
+                    values[key] = try decodeStoredValue(storedValue)
+                } catch {
+                    corrupt.append(key)
+                }
             }
 
-            return BridgeResponse.success(data: ["values": values])
+            var data: [String: Any] = ["values": values]
+            if !corrupt.isEmpty {
+                data["corrupt"] = corrupt.sorted()
+            }
+
+            return BridgeResponse.success(data: data)
         }
     }
 }
@@ -113,7 +129,8 @@ private func settingKey(_ parameters: [String: Any]) throws -> String {
 }
 
 private func validateKey(_ key: String) throws {
-    guard key.range(of: "^[a-z0-9_]+(?:\\.[a-z0-9_]+)*$", options: .regularExpression) != nil else {
+    guard key.range(of: "^[a-z0-9_]+(?:\\.[a-z0-9_]+)*$", options: .regularExpression) != nil,
+          !key.split(separator: ".").contains(where: { reservedKeySegments.contains(String($0)) }) else {
         throw BridgeError.invalidParameters("key must use lowercase dot notation.")
     }
 }
@@ -212,14 +229,28 @@ private func decodeStoredValue(_ value: Any) throws -> Any {
         return try validateStoredValueSize(double)
     }
 
-    guard storedString.hasPrefix(jsonPrefix),
-          let data = String(storedString.dropFirst(jsonPrefix.count)).data(using: .utf8) else {
+    if storedString.hasPrefix(jsonV2Prefix) {
+        return try decodeStoredJSON(String(storedString.dropFirst(jsonV2Prefix.count)), allowsScalars: true)
+    }
+
+    guard storedString.hasPrefix(jsonPrefix) else {
+        throw BridgeError.executionFailed("Stored value is malformed or unsupported.")
+    }
+
+    return try decodeStoredJSON(String(storedString.dropFirst(jsonPrefix.count)), allowsScalars: false)
+}
+
+/// Decodes v1 JSON collections and v2 JSON values (any type, including scalars).
+/// Both go through the same null, depth, finiteness, and size validation as writes.
+private func decodeStoredJSON(_ json: String, allowsScalars: Bool) throws -> Any {
+    // Reject oversized payloads before parsing; a valid value never exceeds the limit.
+    guard json.utf8.count <= maxValueBytes, let data = json.data(using: .utf8) else {
         throw BridgeError.executionFailed("Stored value is malformed or unsupported.")
     }
 
     do {
         let decoded = try JSONSerialization.jsonObject(with: data, options: [.fragmentsAllowed])
-        guard decoded is [Any] || decoded is [String: Any] else {
+        guard allowsScalars || decoded is [Any] || decoded is [String: Any] else {
             throw BridgeError.executionFailed("Stored value is malformed or unsupported.")
         }
         return try validateStoredValueSize(normalizeValue(decoded))

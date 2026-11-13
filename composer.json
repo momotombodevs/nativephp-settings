@@ -3,18 +3,39 @@
     "description": "Local typed settings for NativePHP Mobile applications.",
     "type": "nativephp-plugin",
     "license": "MIT",
+    "keywords": [
+        "nativephp",
+        "nativephp-mobile",
+        "laravel",
+        "settings",
+        "preferences",
+        "storage",
+        "userdefaults",
+        "sharedpreferences",
+        "key-value"
+    ],
+    "homepage": "https://github.com/momotombodevs/nativephp-settings",
+    "support": {
+        "issues": "https://github.com/momotombodevs/nativephp-settings/issues",
+        "source": "https://github.com/momotombodevs/nativephp-settings"
+    },
     "authors": [
         {
             "name": "Momotombo"
         }
     ],
     "require": {
-        "php": "^8.2",
+        "php": "^8.3",
         "nativephp/mobile": "^4.5"
     },
     "autoload": {
         "psr-4": {
             "Momotombo\\NativephpSettings\\": "src/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "Momotombo\\NativephpSettings\\Tests\\": "tests/"
         }
     },
     "extra": {
@@ -28,14 +49,21 @@
         }
     },
     "require-dev": {
-        "pestphp/pest": "^3.0"
+        "laravel/pint": "^1.24",
+        "orchestra/testbench": "^10.0|^11.0",
+        "pestphp/pest": "^3.0|^4.0|^5.0"
     },
     "scripts": {
-        "test": "pest"
+        "test": "pest",
+        "format": "pint",
+        "format:check": "pint --test"
     },
     "config": {
         "allow-plugins": {
             "pestphp/pest-plugin": true
-        }
-    }
+        },
+        "sort-packages": true
+    },
+    "minimum-stability": "stable",
+    "prefer-stable": true
 }

@@ -2,6 +2,14 @@
   "name": "@momotombo/nativephp-settings",
   "private": true,
   "type": "module",
+  "main": "./resources/js/settings.js",
+  "types": "./resources/js/settings.d.ts",
+  "exports": {
+    ".": {
+      "types": "./resources/js/settings.d.ts",
+      "default": "./resources/js/settings.js"
+    }
+  },
   "scripts": {
     "test:js": "node --test resources/js/settings.test.mjs"
   }

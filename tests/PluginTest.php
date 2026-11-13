@@ -1,221 +1,129 @@
 <?php
 
+declare(strict_types=1);
+
+use Illuminate\Support\ServiceProvider;
+use Momotombo\NativephpSettings\Facades\Settings as SettingsFacade;
+use Momotombo\NativephpSettings\Settings;
+use Momotombo\NativephpSettings\SettingsServiceProvider;
+use Native\Mobile\Plugins\PluginManifest;
+
 /**
- * Plugin validation tests for Settings.
- *
- * Run with: ./vendor/bin/pest
+ * @return array<string, mixed>
  */
+function settingsPluginJson(string $file): array
+{
+    return json_decode((string) file_get_contents(dirname(__DIR__).'/'.$file), true, 512, JSON_THROW_ON_ERROR);
+}
 
-beforeEach(function () {
-    $this->pluginPath = dirname(__DIR__);
-    $this->manifestPath = $this->pluginPath . '/nativephp.json';
-});
+function settingsPluginSource(string $file): string
+{
+    return (string) file_get_contents(dirname(__DIR__).'/'.$file);
+}
 
-describe('Plugin Manifest', function () {
-    it('has a valid nativephp.json file', function () {
-        expect(file_exists($this->manifestPath))->toBeTrue();
+/**
+ * @return array<string, array{0: array<string, mixed>}>
+ */
+function settingsBridgeFunctions(): array
+{
+    $functions = [];
 
-        $content = file_get_contents($this->manifestPath);
-        $manifest = json_decode($content, true);
+    foreach (settingsPluginJson('nativephp.json')['bridge_functions'] as $function) {
+        $functions[$function['name']] = [$function];
+    }
 
-        expect(json_last_error())->toBe(JSON_ERROR_NONE);
+    return $functions;
+}
+
+describe('manifest', function () {
+    it('is accepted by the NativePHP plugin manifest parser', function () {
+        $manifest = PluginManifest::fromFile(dirname(__DIR__).'/nativephp.json');
+
+        expect($manifest->namespace)->toBe('Settings')
+            ->and($manifest->platforms)->toBe(['android', 'ios'])
+            ->and(array_column($manifest->bridgeFunctions, 'name'))->toBe([
+                'Settings.Set',
+                'Settings.Get',
+                'Settings.Has',
+                'Settings.Forget',
+                'Settings.All',
+            ])
+            ->and($manifest->hooks)->toBe([]);
     });
 
-    it('has required fields', function () {
-        $manifest = json_decode(file_get_contents($this->manifestPath), true);
+    it('matches the composer package metadata', function () {
+        $manifest = settingsPluginJson('nativephp.json');
+        $composer = settingsPluginJson('composer.json');
 
-        expect($manifest)->toHaveKeys(['name', 'namespace', 'bridge_functions']);
-        expect($manifest['name'])->toBe('momotombo/nativephp-settings');
-        expect($manifest['namespace'])->toBe('Settings');
+        expect($manifest['name'])->toBe($composer['name'])
+            ->and($manifest['license'])->toBe($composer['license'])
+            ->and($manifest['service_provider'])->toBe(SettingsServiceProvider::class)
+            ->and($composer['type'])->toBe('nativephp-plugin')
+            ->and($composer['extra']['nativephp']['manifest'])->toBe('nativephp.json')
+            ->and($composer['extra']['laravel']['providers'])->toBe([SettingsServiceProvider::class])
+            ->and($manifest['keywords'])->not->toBeEmpty();
     });
 
-    it('has valid bridge functions', function () {
-        $manifest = json_decode(file_get_contents($this->manifestPath), true);
+    it('declares the version of the latest changelog entry', function () {
+        preg_match('/^## \[(\d+\.\d+\.\d+)\]/m', settingsPluginSource('CHANGELOG.md'), $matches);
 
-        expect($manifest['bridge_functions'])->toBeArray();
-
-        foreach ($manifest['bridge_functions'] as $function) {
-            expect($function)->toHaveKeys(['name']);
-            expect(array_intersect(['android', 'ios'], array_keys($function)))->not->toBeEmpty();
-        }
-    });
-
-    it('has valid marketplace metadata', function () {
-        $manifest = json_decode(file_get_contents($this->manifestPath), true);
-
-        // Optional but recommended for marketplace
-        if (isset($manifest['keywords'])) {
-            expect($manifest['keywords'])->toBeArray();
-        }
-
-        if (isset($manifest['category'])) {
-            expect($manifest['category'])->toBeString();
-        }
-
-        if (isset($manifest['platforms'])) {
-            expect($manifest['platforms'])->toBeArray();
-            foreach ($manifest['platforms'] as $platform) {
-                expect($platform)->toBeIn(['android', 'ios']);
-            }
-        }
-    });
-});
-
-describe('Native Code', function () {
-    it('has Android Kotlin file', function () {
-        $kotlinFile = $this->pluginPath . '/resources/android/SettingsFunctions.kt';
-
-        expect(file_exists($kotlinFile))->toBeTrue();
-
-        $content = file_get_contents($kotlinFile);
-        expect($content)->toContain('package dev.momotombo.plugins.nativephp_settings');
-        expect($content)->toContain('object SettingsFunctions');
-        expect($content)->toContain('BridgeFunction');
-    });
-
-    it('has iOS Swift file', function () {
-        $swiftFile = $this->pluginPath . '/resources/ios/SettingsFunctions.swift';
-
-        expect(file_exists($swiftFile))->toBeTrue();
-
-        $content = file_get_contents($swiftFile);
-        expect($content)->toContain('enum SettingsFunctions');
-        expect($content)->toContain('BridgeFunction');
-    });
-
-    it('has matching bridge function classes in native code', function () {
-        $manifest = json_decode(file_get_contents($this->manifestPath), true);
-
-        $kotlinFile = $this->pluginPath . '/resources/android/SettingsFunctions.kt';
-        $swiftFile = $this->pluginPath . '/resources/ios/SettingsFunctions.swift';
-
-        $kotlinContent = file_get_contents($kotlinFile);
-        $swiftContent = file_get_contents($swiftFile);
-
-        foreach ($manifest['bridge_functions'] as $function) {
-            // Extract class name from the function reference
-            if (isset($function['android'])) {
-                $parts = explode('.', $function['android']);
-                $className = end($parts);
-                expect($kotlinContent)->toContain("class {$className}");
-            }
-
-            if (isset($function['ios'])) {
-                $parts = explode('.', $function['ios']);
-                $className = end($parts);
-                expect($swiftContent)->toContain("class {$className}");
-            }
-        }
+        expect($matches[1] ?? null)->toBe(settingsPluginJson('nativephp.json')['version']);
     });
 });
 
-describe('PHP Classes', function () {
-    it('has service provider', function () {
-        $file = $this->pluginPath . '/src/SettingsServiceProvider.php';
-        expect(file_exists($file))->toBeTrue();
+describe('native parity', function () {
+    it('implements each bridge function in Swift and Kotlin', function (array $function) {
+        $swift = settingsPluginSource('resources/ios/SettingsFunctions.swift');
+        $kotlin = settingsPluginSource('resources/android/SettingsFunctions.kt');
 
-        $content = file_get_contents($file);
-        expect($content)->toContain('namespace Momotombo\NativephpSettings');
-        expect($content)->toContain('class SettingsServiceProvider');
+        [$swiftContainer, $swiftClass] = explode('.', $function['ios']);
+        $androidParts = explode('.', $function['android']);
+        $kotlinClass = array_pop($androidParts);
+        $kotlinContainer = array_pop($androidParts);
+        $kotlinPackage = implode('.', $androidParts);
+
+        expect($swift)->toContain("enum {$swiftContainer} {")
+            ->toMatch('/^\s+class '.preg_quote($swiftClass, '/').': BridgeFunction \{/m')
+            ->and($kotlin)->toContain("package {$kotlinPackage}\n")
+            ->toContain("object {$kotlinContainer} {")
+            ->toMatch('/^\s+class '.preg_quote($kotlinClass, '/').'\(private val context: Context\) : BridgeFunction \{/m')
+            ->and($function['android_params'] ?? [])->toBe(['context']);
+    })->with(settingsBridgeFunctions());
+
+    it('uses the same storage prefixes and limits on both platforms', function () {
+        $swift = settingsPluginSource('resources/ios/SettingsFunctions.swift');
+        $kotlin = settingsPluginSource('resources/android/SettingsFunctions.kt');
+
+        foreach (['"dev.momotombo.nativephp.settings."', '"mnp-settings:v1:s:"', '"mnp-settings:v1:d:"', '"mnp-settings:v1:j:"', '"mnp-settings:v2:"', '65_536', '= 32'] as $token) {
+            expect($swift)->toContain($token)
+                ->and($kotlin)->toContain($token);
+        }
+
+        expect(Settings::MAX_VALUE_BYTES)->toBe(65_536);
     });
 
-    it('has facade', function () {
-        $file = $this->pluginPath . '/src/Facades/Settings.php';
-        expect(file_exists($file))->toBeTrue();
+    it('rejects the same reserved key segments in PHP, Swift, Kotlin, and JavaScript', function () {
+        $sources = [
+            'swift' => settingsPluginSource('resources/ios/SettingsFunctions.swift'),
+            'kotlin' => settingsPluginSource('resources/android/SettingsFunctions.kt'),
+            'javascript' => str_replace("'", '"', settingsPluginSource('resources/js/settings.js')),
+        ];
 
-        $content = file_get_contents($file);
-        expect($content)->toContain('namespace Momotombo\NativephpSettings\Facades');
-        expect($content)->toContain('class Settings extends Facade');
-    });
+        foreach ($sources as $platform => $source) {
+            expect(preg_match('/RESERVED_KEY_SEGMENTS[^\n]*|reservedKeySegments[^\n]*/i', $source, $match))->toBe(1, $platform);
 
-    it('has main implementation class', function () {
-        $file = $this->pluginPath . '/src/Settings.php';
-        expect(file_exists($file))->toBeTrue();
+            preg_match_all('/"([^"]+)"/', $match[0], $segments);
 
-        $content = file_get_contents($file);
-        expect($content)->toContain('namespace Momotombo\NativephpSettings');
-        expect($content)->toContain('class Settings');
+            expect($segments[1])->toBe(Settings::RESERVED_KEY_SEGMENTS, $platform);
+        }
     });
 });
 
-describe('Composer Configuration', function () {
-    it('has valid composer.json', function () {
-        $composerPath = $this->pluginPath . '/composer.json';
-        expect(file_exists($composerPath))->toBeTrue();
-
-        $content = file_get_contents($composerPath);
-        $composer = json_decode($content, true);
-
-        expect(json_last_error())->toBe(JSON_ERROR_NONE);
-        expect($composer['type'])->toBe('nativephp-plugin');
-        expect($composer['extra']['nativephp']['manifest'])->toBe('nativephp.json');
-    });
-});
-
-describe('Lifecycle Hooks', function () {
-    it('has valid hooks configuration', function () {
-        $manifest = json_decode(file_get_contents($this->manifestPath), true);
-
-        if (isset($manifest['hooks'])) {
-            expect($manifest['hooks'])->toBeArray();
-
-            $validHooks = ['pre_compile', 'post_compile', 'copy_assets', 'post_build'];
-            foreach (array_keys($manifest['hooks']) as $hook) {
-                expect($hook)->toBeIn($validHooks);
-            }
-        }
-    });
-
-    it('has copy_assets hook command', function () {
-        $manifest = json_decode(file_get_contents($this->manifestPath), true);
-
-        expect($manifest['hooks']['copy_assets'] ?? null)->not->toBeNull();
-
-        $commandFile = $this->pluginPath . '/src/Commands/CopyAssetsCommand.php';
-        expect(file_exists($commandFile))->toBeTrue();
-    });
-
-    it('copy_assets command extends NativePluginHookCommand', function () {
-        $commandFile = $this->pluginPath . '/src/Commands/CopyAssetsCommand.php';
-        $content = file_get_contents($commandFile);
-
-        expect($content)->toContain('extends NativePluginHookCommand');
-        expect($content)->toContain('use Native\Mobile\Plugins\Commands\NativePluginHookCommand');
-    });
-
-    it('copy_assets command has correct signature', function () {
-        $manifest = json_decode(file_get_contents($this->manifestPath), true);
-        $expectedSignature = $manifest['hooks']['copy_assets'];
-
-        $commandFile = $this->pluginPath . '/src/Commands/CopyAssetsCommand.php';
-        $content = file_get_contents($commandFile);
-
-        expect($content)->toContain('$signature = \'' . $expectedSignature . '\'');
-    });
-
-    it('copy_assets command has platform-specific methods', function () {
-        $commandFile = $this->pluginPath . '/src/Commands/CopyAssetsCommand.php';
-        $content = file_get_contents($commandFile);
-
-        // Should check for platform
-        expect($content)->toContain('$this->isAndroid()');
-        expect($content)->toContain('$this->isIos()');
-    });
-
-    it('has valid assets configuration', function () {
-        $manifest = json_decode(file_get_contents($this->manifestPath), true);
-
-        // Assets are at top level with android/ios nested inside
-        if (isset($manifest['assets'])) {
-            expect($manifest['assets'])->toBeArray();
-
-            if (isset($manifest['assets']['android'])) {
-                expect($manifest['assets']['android'])->toBeArray();
-            }
-
-            if (isset($manifest['assets']['ios'])) {
-                expect($manifest['assets']['ios'])->toBeArray();
-            }
-        }
+describe('php entry points', function () {
+    it('exposes the facade, service, and provider classes', function () {
+        expect(class_exists(SettingsFacade::class))->toBeTrue()
+            ->and(class_exists(Settings::class))->toBeTrue()
+            ->and(is_subclass_of(SettingsServiceProvider::class, ServiceProvider::class))->toBeTrue()
+            ->and(file_exists(dirname(__DIR__).'/config/nativephp-settings.php'))->toBeTrue();
     });
 });
